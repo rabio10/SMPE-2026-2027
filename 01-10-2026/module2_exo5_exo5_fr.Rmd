@@ -1,0 +1,130 @@
+---
+title: "Analyse du risque de défaillance des joints toriques de la navette Challenger"
+author: "Arnaud Legrand"
+date: "28 juin 2018"
+output: html_document
+---
+
+Le 27 Janvier 1986, veille du décollage de la navette _Challenger_, eu
+lieu une télé-conférence de trois heures entre les ingénieurs de la
+Morton Thiokol (constructeur d'un des moteurs) et de la NASA. La
+discussion portait principalement sur les conséquences de la
+température prévue au moment du décollage de 31°F (juste en dessous de
+0°C) sur le succès du vol et en particulier sur la performance des
+joints toriques utilisés dans les moteurs. En effet, aucun test
+n'avait été effectué à cette température.
+
+L'étude qui suit reprend donc une partie des analyses effectuées cette
+nuit là et dont l'objectif était d'évaluer l'influence potentielle de
+la température et de la pression à laquelle sont soumis les joints
+toriques sur leur probabilité de dysfonctionnement. Pour cela, nous
+disposons des résultats des expériences réalisées par les ingénieurs
+de la NASA durant les 6 années précédant le lancement de la navette
+Challenger.
+
+# Chargement des données
+Nous commençons donc par charger ces données:
+
+```{r}
+data = read.csv("module2_exo5_shuttle.csv",header=T)
+data
+```
+
+Le jeu de données nous indique la date de l'essai, le nombre de joints
+toriques mesurés (il y en a 6 sur le lançeur principal), la
+température (en Farenheit) et la pression (en psi), et enfin le
+nombre de dysfonctionnements relevés. 
+
+# Inspection graphique des données
+il ne faut pas exclure les données des vols où aucun incident n'est relevé. Ils
+apportent toujours des informations.
+
+```{r}
+# data = data[data$Malfunction>0,]
+# data
+```
+
+Très bien, nous avons une variabilité de température importante mais
+la pression est quasiment toujours égale à 200, ce qui devrait
+simplifier l'analyse.
+
+Comment la fréquence d'échecs varie-t-elle avec la température ?
+```{r}
+plot(data=data, Malfunction/Count ~ Temperature, ylim=c(0,1))
+```
+
+À première vue, ce n'est pas flagrant mais bon, essayons quand même
+d'estimer l'impact de la température $t$ sur la probabilité de
+dysfonctionnements d'un joint. 
+
+# Estimation de l'influence de la température
+
+Supposons que chacun des 6 joints toriques est endommagé avec la même
+probabilité et indépendamment des autres et que cette probabilité ne
+dépend que de la température. Si on note $p(t)$ cette probabilité, le
+nombre de joints $D$ dysfonctionnant lorsque l'on effectue le vol à
+température $t$ suit une loi binomiale de paramètre $n=6$ et
+$p=p(t)$. Pour relier $p(t)$ à $t$, on va donc effectuer une
+régression logistique.
+
+```{r}
+logistic_reg = glm(data=data, Malfunction/Count ~ Temperature, weights=Count, 
+                   family=binomial(link='logit'))
+summary(logistic_reg)
+```
+
+L'estimateur le plus probable du paramètre de température est 0.001416
+et l'erreur standard de cet estimateur est de 0.049, autrement dit on
+ne peut pas distinguer d'impact particulier et il faut prendre nos
+estimations avec des pincettes.
+
+# Estimation de la probabilité de dysfonctionnant des joints toriques
+La température prévue le jour du décollage est de 31°F. Essayons
+d'estimer la probabilité de dysfonctionnement des joints toriques à
+cette température à partir du modèle que nous venons de construire:
+
+```{r}
+# shuttle=shuttle[shuttle$r!=0,] 
+tempv = seq(from=30, to=90, by = .5)
+rmv <- predict(logistic_reg,list(Temperature=tempv),type="response")
+plot(tempv,rmv,type="l",ylim=c(0,1))
+points(data=data, Malfunction/Count ~ Temperature)
+```
+
+on voit que les températures affectent la probabilité de défaillence, mais il faut savoir l'intervalle de confiance de cette prédiction : 
+```{r}
+tempv = seq(from=30, to=90, by = .5)
+rmv <- predict(logistic_reg,list(Temperature=tempv),type="response")
+plot(tempv,rmv,type="l",ylim=c(0,1))
+points(data=data, Malfunction/Count ~ Temperature)
+p <- predict(logistic_reg, list(Temperature = tempv), type = "response", se.fit = TRUE)
+lines(tempv, p$fit + 1.96 * p$se.fit, lty = 2)
+lines(tempv, p$fit - 1.96 * p$se.fit, lty = 2)
+```
+donc on peut pas faire confience por les prédiction à température basse, et c'est logique puisqu'on n'a pas des mesure physique pour ces températures. 
+Mais comme meme on peut conclure qu'il y a une forte chance qu'il y a une défaillances dans des températures basse.
+
+Revenons à l’ensemble des données initiales pour estimer la probabilité de défaillance d’un joint:
+
+```{r}
+data_full = read.csv("module2_exo5_shuttle.csv",header=T)
+sum(data_full$Malfunction)/sum(data_full$Count)
+```
+
+Cette probabilité est donc d'environ $p=0.065$, sachant qu'il existe
+un joint primaire un joint secondaire sur chacune des trois parties du
+lançeur, la probabilité de défaillance des deux joints d'un lançeur
+est de $p^2 \approx 0.00425$. La probabilité de défaillance d'un des
+lançeur est donc de $1-(1-p^2)^3 \approx 1.2%$.  Ça serait vraiment
+pas de chance... Tout est sous contrôle, le décollage peut donc avoir
+lieu demain comme prévu.
+
+Seulement, le lendemain, la navette Challenger explosera et emportera
+avec elle ses sept membres d'équipages. L'opinion publique est
+fortement touchée et lors de l'enquête qui suivra, la fiabilité des
+joints toriques sera directement mise en cause. Au delà des problèmes
+de communication interne à la NASA qui sont pour beaucoup dans ce
+fiasco, l'analyse précédente comporte (au moins) un petit
+problème... Saurez-vous le trouver ? Vous êtes libre de modifier cette
+analyse et de regarder ce jeu de données sous tous les angles afin
+d'expliquer ce qui ne va pas.
